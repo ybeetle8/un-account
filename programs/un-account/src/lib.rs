@@ -120,7 +120,7 @@ pub struct CreateDynamicPda<'info> {
 
 #[derive(Accounts)]
 pub struct CloseDynamicPda<'info> {
-    /// CHECK: 这是一个动态PDA账户，无法在编译时验证seeds， 
+    /// CHECK: 这是一个动态PDA账户，无法在编译时验证seeds， aaa
     /// 在运行时手动验证PDA地址是否匹配预期的seed
     #[account(mut)]
     pub pda_account: UncheckedAccount<'info>, 
