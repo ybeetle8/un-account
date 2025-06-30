@@ -289,6 +289,126 @@ describe("un-account", () => {
     }
   });
 
+  it("批量关闭3个普通PDA账户", async () => {
+    console.log("\n=== 批量关闭3个普通PDA账户 ===");
+    
+    // 重新创建一些PDA用于批量关闭测试
+    const batchSeeds = ["batch1", "batch2", "batch3"];
+    const batchDataList = [
+      "批量测试数据1",
+      "批量测试数据2", 
+      "批量测试数据3"
+    ];
+    const batchPdas = [];
+
+    console.log("为批量测试创建3个新的PDA账户...");
+    
+    for (let i = 0; i < batchSeeds.length; i++) {
+      const seed = batchSeeds[i];
+      const data = batchDataList[i];
+      
+      // 计算PDA地址
+      const [pdaAccount, bump] = PublicKey.findProgramAddressSync(
+        [Buffer.from("dynamic_pda"), Buffer.from(seed)],
+        program.programId
+      );
+
+      console.log(`创建批量PDA ${i + 1}，种子: "${seed}"`);
+
+      try {
+        const tx = await program.methods
+          .createDynamicPda(seed, data)
+          .accounts({
+            pdaAccount: pdaAccount,
+            user: provider.wallet.publicKey,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc();
+
+        console.log(`✅ 批量PDA ${i + 1} 创建成功。交易签名: ${tx}`);
+        
+        batchPdas.push({
+          seed: seed,
+          address: pdaAccount,
+          data: data,
+          bump: bump
+        });
+        
+      } catch (error) {
+        console.error(`❌ 创建批量PDA ${i + 1} 失败:`, error.message);
+        return;
+      }
+    }
+    
+    console.log("\n开始批量关闭3个PDA账户...");
+    
+    // 获取关闭前的余额
+    const receiverBalanceBefore = await provider.connection.getBalance(provider.wallet.publicKey);
+    
+    // 获取每个账户关闭前的lamports
+    const lamportsBefore = [];
+    for (const pda of batchPdas) {
+      const accountInfo = await provider.connection.getAccountInfo(pda.address);
+      lamportsBefore.push(accountInfo ? accountInfo.lamports : 0);
+      console.log(`PDA "${pda.seed}" 关闭前lamports: ${lamportsBefore[lamportsBefore.length - 1]}`);
+    }
+    
+    try {
+      const tx = await program.methods
+        .closeThreeNormalPdas(batchPdas[0].seed, batchPdas[1].seed, batchPdas[2].seed)
+        .accounts({
+          pdaAccount1: batchPdas[0].address,
+          pdaAccount2: batchPdas[1].address,
+          pdaAccount3: batchPdas[2].address,
+          receiver: provider.wallet.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .rpc();
+
+      console.log(`✅ 批量关闭3个PDA成功！交易签名: ${tx}`);
+      
+      // 验证所有账户都被关闭
+      for (let i = 0; i < batchPdas.length; i++) {
+        const pda = batchPdas[i];
+        try {
+          const accountInfoAfter = await provider.connection.getAccountInfo(pda.address);
+          if (accountInfoAfter === null) {
+            console.log(`   ✅ PDA "${pda.seed}" 成功关闭`);
+          } else {
+            console.log(`   ⚠️  PDA "${pda.seed}" 仍然存在，余额: ${accountInfoAfter.lamports} lamports`);
+          }
+        } catch (fetchError) {
+          console.log(`   ✅ PDA "${pda.seed}" 已不存在（符合预期）`);
+        }
+      }
+      
+      // 检查接收者余额增加
+      const receiverBalanceAfter = await provider.connection.getBalance(provider.wallet.publicKey);
+      const totalIncrease = receiverBalanceAfter - receiverBalanceBefore;
+      const expectedIncrease = lamportsBefore.reduce((sum, lamports) => sum + lamports, 0);
+      
+      console.log(`💰 接收者余额增加了: ${totalIncrease} lamports`);
+      console.log(`💰 预期增加: ${expectedIncrease} lamports`);
+      console.log(`💰 交易费用约: ${expectedIncrease - totalIncrease} lamports`);
+      
+    } catch (error) {
+      console.error(`❌ 批量关闭失败:`, error.message);
+      if (error.logs) {
+        console.error("   错误日志:", error.logs);
+      }
+      
+      // 如果失败，检查哪些账户仍然存在
+      for (const pda of batchPdas) {
+        try {
+          const accountInfo = await program.account.dynamicPdaAccount.fetch(pda.address);
+          console.log(`   🔄 PDA "${pda.seed}" 仍然存在，数据: "${accountInfo.data}"`);
+        } catch (fetchError) {
+          console.log(`   ❌ PDA "${pda.seed}" 检查失败`);
+        }
+      }
+    }
+  });
+
   it("测试总结", async () => {
     console.log("\n=== 测试总结 ===");
     console.log(`总共创建的PDA数量: ${createdPdas.length}`);

@@ -95,6 +95,56 @@ pub mod un_account {
         
         Ok(())
     }
+
+    /// 批量关闭3个普通PDA账户
+    pub fn close_three_normal_pdas(
+        ctx: Context<CloseThreeNormalPdas>, 
+        seed1: String, 
+        seed2: String, 
+        seed3: String
+    ) -> Result<()> {
+        msg!("开始批量关闭3个普通PDA账户");
+        msg!("种子1: {}, 种子2: {}, 种子3: {}", seed1, seed2, seed3);
+        
+        // 关闭第一个PDA
+        let pda1_info = ctx.accounts.pda_account1.to_account_info();
+        let lamports1 = pda1_info.lamports();
+        **pda1_info.try_borrow_mut_lamports()? = 0;
+        let mut data1 = pda1_info.try_borrow_mut_data()?;
+        data1.fill(0);
+        msg!("已关闭PDA1: {}, 回收lamports: {}", seed1, lamports1);
+        
+        // 关闭第二个PDA
+        let pda2_info = ctx.accounts.pda_account2.to_account_info();
+        let lamports2 = pda2_info.lamports();
+        **pda2_info.try_borrow_mut_lamports()? = 0;
+        let mut data2 = pda2_info.try_borrow_mut_data()?;
+        data2.fill(0);
+        msg!("已关闭PDA2: {}, 回收lamports: {}", seed2, lamports2);
+        
+        // 关闭第三个PDA
+        let pda3_info = ctx.accounts.pda_account3.to_account_info();
+        let lamports3 = pda3_info.lamports();
+        **pda3_info.try_borrow_mut_lamports()? = 0;
+        let mut data3 = pda3_info.try_borrow_mut_data()?;
+        data3.fill(0);
+        msg!("已关闭PDA3: {}, 回收lamports: {}", seed3, lamports3);
+        
+        // 将所有回收的lamports转给接收者
+        let total_lamports = lamports1.checked_add(lamports2)
+            .ok_or(ErrorCode::ArithmeticOverflow)?
+            .checked_add(lamports3)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+            
+        **ctx.accounts.receiver.try_borrow_mut_lamports()? = ctx.accounts
+            .receiver
+            .lamports()
+            .checked_add(total_lamports)
+            .ok_or(ErrorCode::ArithmeticOverflow)?;
+        
+        msg!("批量关闭完成，总共回收lamports: {}", total_lamports);
+        Ok(())
+    }
 }
 
 #[derive(Accounts)]
@@ -120,7 +170,7 @@ pub struct CreateDynamicPda<'info> {
 
 #[derive(Accounts)]
 pub struct CloseDynamicPda<'info> {
-    /// CHECK: 这是一个动态PDA账户，无法在编译时验证seeds， aaa
+    /// CHECK: 这是一个动态PDA账户，无法在编译时验证seeds，
     /// 在运行时手动验证PDA地址是否匹配预期的seed
     #[account(mut)]
     pub pda_account: UncheckedAccount<'info>, 
@@ -147,6 +197,39 @@ pub struct CloseNormalPdaInvalid<'info> {
         bump
     )]
     pub pda_account: Account<'info, DynamicPdaAccount>,
+    
+    #[account(mut)]
+    pub receiver: SystemAccount<'info>,
+    
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(seed1: String, seed2: String, seed3: String)]
+pub struct CloseThreeNormalPdas<'info> {
+    /// 第一个普通PDA账户
+    #[account(
+        mut,
+        seeds = [b"dynamic_pda", seed1.as_bytes()],
+        bump
+    )]
+    pub pda_account1: Account<'info, DynamicPdaAccount>,
+    
+    /// 第二个普通PDA账户
+    #[account(
+        mut,
+        seeds = [b"dynamic_pda", seed2.as_bytes()],
+        bump
+    )]
+    pub pda_account2: Account<'info, DynamicPdaAccount>,
+    
+    /// 第三个普通PDA账户
+    #[account(
+        mut,
+        seeds = [b"dynamic_pda", seed3.as_bytes()],
+        bump
+    )]
+    pub pda_account3: Account<'info, DynamicPdaAccount>,
     
     #[account(mut)]
     pub receiver: SystemAccount<'info>,
